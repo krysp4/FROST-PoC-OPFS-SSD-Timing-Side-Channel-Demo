@@ -1,0 +1,673 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FROST Attack Demo — SSD Timing via OPFS</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #0e0e10;
+    color: #e8e8ec;
+    min-height: 100vh;
+    padding: 2rem;
+  }
+  h1 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.25rem;
+  }
+  .subtitle {
+    font-size: 0.85rem;
+    color: #888;
+    margin-bottom: 2rem;
+  }
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 12px;
+    margin-bottom: 1.5rem;
+  }
+  .card {
+    background: #1a1a1e;
+    border: 1px solid #2a2a30;
+    border-radius: 10px;
+    padding: 1rem;
+  }
+  .card-label {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin-bottom: 6px;
+  }
+  .card-value {
+    font-size: 1.4rem;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: #e8e8ec;
+  }
+  .controls {
+    display: flex;
+    gap: 12px;
+    align-items: flex-end;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+    background: #1a1a1e;
+    border: 1px solid #2a2a30;
+    border-radius: 10px;
+    padding: 1rem 1.25rem;
+  }
+  .control-group label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #666;
+    margin-bottom: 6px;
+  }
+  select, input[type="range"] {
+    background: #0e0e10;
+    border: 1px solid #333;
+    color: #e8e8ec;
+    border-radius: 6px;
+    padding: 7px 10px;
+    font-size: 13px;
+    font-family: inherit;
+    cursor: pointer;
+  }
+  select:focus { outline: none; border-color: #4ade80; }
+  .range-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  input[type="range"] {
+    padding: 0;
+    width: 120px;
+    accent-color: #4ade80;
+  }
+  .range-val {
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    color: #aaa;
+    min-width: 30px;
+  }
+  .buttons {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 1.25rem;
+  }
+  button {
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    border-radius: 7px;
+    border: 1px solid #333;
+    padding: 8px 16px;
+    cursor: pointer;
+    transition: all 0.15s;
+    color: #e8e8ec;
+    background: #1a1a1e;
+  }
+  button:hover:not(:disabled) { background: #252530; border-color: #555; }
+  button:active:not(:disabled) { transform: scale(0.97); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  button.primary { background: #14532d; border-color: #16a34a; color: #4ade80; }
+  button.primary:hover:not(:disabled) { background: #166534; }
+  button.danger { background: #450a0a; border-color: #991b1b; color: #f87171; }
+  button.danger:hover:not(:disabled) { background: #7f1d1d; }
+  .warn {
+    display: none;
+    background: #1c1500;
+    border: 1px solid #854d0e;
+    border-radius: 8px;
+    padding: 0.75rem 1rem;
+    font-size: 13px;
+    color: #fbbf24;
+    margin-bottom: 1.25rem;
+    line-height: 1.5;
+  }
+  .chart-wrap {
+    background: #1a1a1e;
+    border: 1px solid #2a2a30;
+    border-radius: 10px;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+  }
+  .chart-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 14px;
+    border-bottom: 1px solid #222228;
+  }
+  .chart-title {
+    font-size: 12px;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+  .legend {
+    display: flex;
+    gap: 14px;
+    font-size: 11px;
+    color: #666;
+    align-items: center;
+  }
+  .legend-dot {
+    width: 8px; height: 2px;
+    display: inline-block;
+    border-radius: 2px;
+    margin-right: 4px;
+    vertical-align: middle;
+  }
+  canvas {
+    display: block;
+    width: 100%;
+    height: 220px;
+  }
+  .placeholder {
+    height: 220px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 13px;
+    color: #444;
+  }
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 0;
+    border-top: 1px solid #222228;
+  }
+  .stat {
+    padding: 8px 14px;
+    border-right: 1px solid #222228;
+    font-size: 12px;
+  }
+  .stat:last-child { border-right: none; }
+  .stat-name { color: #555; margin-bottom: 2px; }
+  .stat-val { font-variant-numeric: tabular-nums; font-weight: 500; font-size: 13px; }
+  .log-wrap {
+    background: #0a0a0c;
+    border: 1px solid #1e1e24;
+    border-radius: 10px;
+    overflow: hidden;
+  }
+  .log-header {
+    padding: 8px 14px;
+    border-bottom: 1px solid #1e1e24;
+    font-size: 11px;
+    color: #555;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  #log {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 12px;
+    padding: 10px 14px;
+    max-height: 200px;
+    overflow-y: auto;
+    line-height: 1.7;
+  }
+  .log-err { color: #f87171; }
+  .log-ok  { color: #4ade80; }
+  .log-warn { color: #fbbf24; }
+  .log-dim { color: #555; }
+  /* spike indicator */
+  .spike-badge {
+    display: inline-block;
+    background: #431407;
+    color: #fb923c;
+    font-size: 10px;
+    border-radius: 4px;
+    padding: 1px 6px;
+    margin-left: 6px;
+    font-weight: 600;
+  }
+  .info-box {
+    margin-top: 1.5rem;
+    background: #111118;
+    border: 1px solid #1e1e30;
+    border-radius: 10px;
+    padding: 1.25rem;
+    font-size: 13px;
+    color: #777;
+    line-height: 1.7;
+  }
+  .info-box h3 {
+    font-size: 13px;
+    font-weight: 600;
+    color: #aaa;
+    margin-bottom: 0.5rem;
+  }
+  .info-box ul {
+    padding-left: 1.2rem;
+  }
+  .info-box li { margin-bottom: 4px; }
+  .tag {
+    display: inline-block;
+    background: #1a1a2e;
+    color: #818cf8;
+    border: 1px solid #2e2e50;
+    border-radius: 4px;
+    font-size: 11px;
+    padding: 1px 7px;
+    font-family: monospace;
+  }
+</style>
+</head>
+<body>
+
+<h1>FROST Attack — Demostración</h1>
+<p class="subtitle">Side-channel SSD timing via Origin Private File System (OPFS) · Proof of Concept · Solo para fines educativos</p>
+
+<div class="grid">
+  <div class="card">
+    <div class="card-label">Estado OPFS</div>
+    <div class="card-value" id="opfs-status">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Tamaño archivo</div>
+    <div class="card-value" id="file-size-val">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Latencia media</div>
+    <div class="card-value" id="avg-lat">—</div>
+  </div>
+  <div class="card">
+    <div class="card-label">Total muestras</div>
+    <div class="card-value" id="sample-count">0</div>
+  </div>
+</div>
+
+<div class="controls">
+  <div class="control-group">
+    <label>Tamaño del archivo sonda</label>
+    <select id="file-size-sel">
+      <option value="67108864">64 MB — puede quedar en RAM</option>
+      <option value="268435456" selected>256 MB — recomendado</option>
+      <option value="536870912">512 MB — más presión sobre SSD</option>
+      <option value="1073741824">1 GB — máxima contención</option>
+    </select>
+  </div>
+  <div class="control-group">
+    <label>Lecturas por ráfaga</label>
+    <div class="range-wrap">
+      <input type="range" id="burst-size" min="10" max="300" value="80">
+      <span class="range-val" id="burst-out">80</span>
+    </div>
+  </div>
+  <div class="control-group">
+    <label>Intervalo entre ráfagas</label>
+    <div class="range-wrap">
+      <input type="range" id="interval" min="10" max="500" value="50" step="10">
+      <span class="range-val" id="interval-out">50 ms</span>
+    </div>
+  </div>
+</div>
+
+<div class="buttons">
+  <button class="primary" id="btn-init" onclick="initOPFS()">1 · Crear archivo OPFS</button>
+  <button id="btn-start" onclick="startMeasuring()" disabled>2 · Iniciar medición</button>
+  <button id="btn-stop" onclick="stopMeasuring()" disabled>Detener</button>
+  <button class="danger" id="btn-clean" onclick="cleanup()" disabled>Limpiar archivo</button>
+</div>
+
+<div class="warn" id="warn-msg"></div>
+
+<div class="chart-wrap">
+  <div class="chart-header">
+    <span class="chart-title">Latencia de lectura SSD (ms)</span>
+    <div class="legend">
+      <span><span class="legend-dot" style="background:#4ade80"></span>latencia</span>
+      <span><span class="legend-dot" style="background:#f59e0b; height:1px"></span>media</span>
+      <span><span class="legend-dot" style="background:#f87171; height:1px; border-top:1px dashed #f87171"></span>umbral pico</span>
+    </div>
+  </div>
+  <div id="chart-placeholder" class="placeholder">Las latencias aparecerán aquí tras iniciar la medición</div>
+  <canvas id="chart" style="display:none"></canvas>
+  <div class="stats-row">
+    <div class="stat"><div class="stat-name">Mín</div><div class="stat-val" id="s-min">—</div></div>
+    <div class="stat"><div class="stat-name">Máx</div><div class="stat-val" id="s-max">—</div></div>
+    <div class="stat"><div class="stat-name">P95</div><div class="stat-val" id="s-p95">—</div></div>
+    <div class="stat"><div class="stat-name">Picos</div><div class="stat-val" id="s-spikes">0</div></div>
+    <div class="stat" style="border-left: 1px solid #222228; background: #151518;"><div class="stat-name">Predicción (Heurística)</div><div class="stat-val" id="s-inference" style="color: #818cf8; font-size: 11px;">Inactivo</div></div>
+  </div>
+</div>
+
+<div class="log-wrap">
+  <div class="log-header">
+    <span>Consola</span>
+    <button onclick="$('log').innerHTML=''" style="font-size:11px;padding:3px 8px">limpiar</button>
+  </div>
+  <div id="log"></div>
+</div>
+
+<div class="info-box">
+  <h3>Cómo funciona este PoC</h3>
+  <ul>
+    <li>Se crea un archivo grande en <span class="tag">OPFS</span> (Origin Private File System) sin pedir ningún permiso al usuario.</li>
+    <li>Se realizan lecturas aleatorias de 4 KB con <span class="tag">createSyncAccessHandle()</span>, midiendo cada una con <span class="tag">performance.now()</span>.</li>
+    <li>Cuando otra app o pestaña genera actividad de disco, aparecen picos de latencia medibles.</li>
+    <li>En el ataque real (paper de Graz), esos patrones se clasifican con una CNN entrenada. Aquí solo se visualizan los picos crudos.</li>
+    <li><strong>Para observar contención:</strong> mientras mides, copia un archivo grande, abre una app pesada o reproduce un vídeo en otra pestaña.</li>
+  </ul>
+  <br>
+  <h3>Requisitos</h3>
+  <ul>
+    <li>Navegador moderno (Chrome 102+, Safari 15.2+, Firefox 111+)</li>
+    <li>Servir desde <span class="tag">localhost</span> o <span class="tag">HTTPS</span> — OPFS requiere contexto seguro</li>
+    <li>Para archivo ≥256 MB: disco con al menos ese espacio libre</li>
+  </ul>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+
+let measuring = false;
+let latencies = [];
+let spikeCount = 0;
+let rollingSpikes = [];
+const MAX_DISPLAY = 400;
+
+function log(msg, type = '') {
+  const el = $('log');
+  const ts = new Date().toLocaleTimeString('es', {hour12: false});
+  const cls = type ? `log-${type}` : '';
+  el.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function warn(msg) {
+  const el = $('warn-msg');
+  el.style.display = msg ? 'block' : 'none';
+  el.textContent = msg;
+}
+
+// ---------- Worker y OPFS ----------
+
+const worker = new Worker('worker.js');
+
+worker.onmessage = function(e) {
+  const data = e.data;
+  switch (data.type) {
+    case 'LOG':
+      log(data.msg, data.logType);
+      break;
+    case 'WARN':
+      warn(data.msg);
+      break;
+    case 'STATUS':
+      $('opfs-status').textContent = data.text;
+      if (data.actualMB !== undefined) {
+        $('file-size-val').textContent = data.actualMB + ' MB';
+      }
+      break;
+    case 'INIT_DONE':
+      $('btn-start').disabled = false;
+      $('btn-clean').disabled = false;
+      warn('');
+      break;
+    case 'ERROR':
+      $('btn-init').disabled = false;
+      break;
+    case 'MEASUREMENT':
+      handleMeasurement(data.samples);
+      break;
+    case 'CLEANUP_DONE':
+      $('opfs-status').textContent = '—';
+      $('file-size-val').textContent = '—';
+      $('avg-lat').textContent = '—';
+      $('sample-count').textContent = '0';
+      $('s-min').textContent = '—'; $('s-max').textContent = '—';
+      $('s-p95').textContent = '—'; $('s-spikes').textContent = '0';
+      $('s-inference').textContent = 'Inactivo';
+      $('s-inference').style.color = '#818cf8';
+      latencies = []; spikeCount = 0; rollingSpikes = [];
+      $('btn-start').disabled = true;
+      $('btn-clean').disabled = true;
+      $('btn-init').disabled = false;
+      $('chart').style.display = 'none';
+      $('chart-placeholder').style.display = 'flex';
+      log('Archivo OPFS eliminado del disco.', 'ok');
+      break;
+  }
+};
+
+async function initOPFS() {
+  $('btn-init').disabled = true;
+  $('opfs-status').textContent = 'Iniciando…';
+  warn('');
+
+  if (!window.Worker || !navigator?.storage?.getDirectory) {
+    $('opfs-status').textContent = 'No soportado';
+    log('OPFS o Web Workers no disponibles. Usa un navegador moderno.', 'err');
+    warn('⚠ Requisitos no cumplidos.');
+    $('btn-init').disabled = false;
+    return;
+  }
+
+  const totalBytes = parseInt($('file-size-sel').value);
+  worker.postMessage({ type: 'INIT', totalBytes });
+}
+
+function handleMeasurement(samples) {
+  latencies.push(...samples);
+  if (latencies.length > MAX_DISPLAY * 4) latencies = latencies.slice(-MAX_DISPLAY * 4);
+
+  const recent = latencies.slice(-MAX_DISPLAY);
+  const avg = recent.reduce((a, b) => a + b, 0) / recent.length;
+  const threshold = avg * 3;
+  const newSpikes = samples.filter(v => v > threshold).length;
+  spikeCount += newSpikes;
+
+  $('avg-lat').textContent = avg.toFixed(3) + ' ms';
+  $('sample-count').textContent = latencies.length.toLocaleString();
+  
+  function percentile(arr, p) {
+    const sorted = [...arr].sort((a, b) => a - b);
+    const idx = Math.floor(sorted.length * p / 100);
+    return sorted[Math.min(idx, sorted.length - 1)];
+  }
+
+  $('s-min').textContent = Math.min(...recent).toFixed(3) + ' ms';
+  $('s-max').textContent = Math.max(...recent).toFixed(3) + ' ms';
+  $('s-p95').textContent = percentile(recent, 95).toFixed(3) + ' ms';
+  $('s-spikes').textContent = spikeCount;
+
+  // Motor de Inferencia Heurística
+  rollingSpikes.push(newSpikes);
+  if (rollingSpikes.length > 20) rollingSpikes.shift(); // Ventana de ~1 segundo
+  
+  const recentTotalSpikes = rollingSpikes.reduce((a, b) => a + b, 0);
+  
+  let inference = "Inactivo";
+  let color = "#e8e8ec";
+  
+  if (recentTotalSpikes > 150) {
+    inference = "🔥 App pesada / Copia archivo";
+    color = "#f87171";
+  } else if (recentTotalSpikes > 50) {
+    inference = "🚀 Navegación / App ligera";
+    color = "#f59e0b";
+  } else if (recentTotalSpikes > 10) {
+    inference = "Actividad de fondo";
+    color = "#4ade80";
+  }
+
+  const infEl = $('s-inference');
+  if (infEl) {
+    infEl.textContent = inference;
+    infEl.style.color = color;
+  }
+
+  if (newSpikes > 0) {
+    log(`⚡ Contención detectada: ${newSpikes} lecturas >3× media (${avg.toFixed(2)} ms). Posible actividad de disco externa.`, 'warn');
+  }
+
+  drawChart(recent, avg, threshold);
+}
+
+function startMeasuring() {
+  measuring = true;
+  spikeCount = 0;
+  latencies = [];
+  rollingSpikes = [];
+  $('btn-start').disabled = true;
+  $('btn-stop').disabled = false;
+  $('btn-init').disabled = true;
+  $('chart-placeholder').style.display = 'none';
+  $('chart').style.display = 'block';
+  log('Iniciando medición de latencia SSD vía OPFS…', 'ok');
+  log('Genera actividad de disco (copia archivos, abre apps pesadas) para ver picos.', 'dim');
+  warn('Midiendo activamente. Abre otras apps o copia archivos para generar contención de disco observable.');
+  
+  const burstSize = parseInt($('burst-size').value);
+  const interval = parseInt($('interval').value);
+  const fileSize = parseInt($('file-size-sel').value);
+  
+  worker.postMessage({ type: 'START', burstSize, interval, fileSize });
+}
+
+function stopMeasuring() {
+  measuring = false;
+  worker.postMessage({ type: 'STOP' });
+  $('btn-start').disabled = false;
+  $('btn-stop').disabled = true;
+  $('btn-init').disabled = false;
+  log('Medición detenida. ' + latencies.length.toLocaleString() + ' muestras recogidas.');
+  warn('');
+}
+
+function cleanup() {
+  stopMeasuring();
+  worker.postMessage({ type: 'CLEANUP' });
+}
+
+// ---------- Canvas chart ----------
+
+function drawChart(data, avg, threshold) {
+  const canvas = $('chart');
+  const dpr = window.devicePixelRatio || 1;
+  const W = canvas.clientWidth;
+  const H = canvas.clientHeight;
+  canvas.width = W * dpr;
+  canvas.height = H * dpr;
+  const ctx = canvas.getContext('2d');
+  ctx.scale(dpr, dpr);
+
+  ctx.clearRect(0, 0, W, H);
+
+  const pad = { top: 14, right: 16, bottom: 20, left: 54 };
+  const gW = W - pad.left - pad.right;
+  const gH = H - pad.top - pad.bottom;
+
+  const maxV = Math.max(...data, threshold * 1.2) * 1.05;
+  const minV = 0;
+  const range = maxV - minV || 1;
+
+  const toY = v => pad.top + gH * (1 - (v - minV) / range);
+  const toX = i => pad.left + (i / (data.length - 1 || 1)) * gW;
+
+  // Grid lines
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.top + (gH * i / 4);
+    ctx.strokeStyle = 'rgba(255,255,255,0.05)';
+    ctx.lineWidth = 0.5;
+    ctx.beginPath(); ctx.moveTo(pad.left, y); ctx.lineTo(W - pad.right, y); ctx.stroke();
+
+    const val = maxV - (range * i / 4);
+    ctx.fillStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = `${10 * dpr / dpr}px monospace`;
+    ctx.textAlign = 'right';
+    ctx.fillText(val.toFixed(2), pad.left - 4, y + 4);
+  }
+
+  // Threshold line
+  ctx.strokeStyle = 'rgba(248,113,113,0.4)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([4, 4]);
+  const thY = toY(threshold);
+  if (thY > pad.top && thY < H - pad.bottom) {
+    ctx.beginPath(); ctx.moveTo(pad.left, thY); ctx.lineTo(W - pad.right, thY); ctx.stroke();
+  }
+  ctx.setLineDash([]);
+
+  // Avg line
+  const avgY = toY(avg);
+  ctx.strokeStyle = 'rgba(245,158,11,0.5)';
+  ctx.lineWidth = 1;
+  ctx.setLineDash([6, 3]);
+  ctx.beginPath(); ctx.moveTo(pad.left, avgY); ctx.lineTo(W - pad.right, avgY); ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.fillStyle = 'rgba(245,158,11,0.7)';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'left';
+  ctx.fillText('avg', W - pad.right + 2, avgY + 4);
+
+  // Area fill under curve
+  ctx.beginPath();
+  ctx.moveTo(toX(0), toY(data[0]));
+  for (let i = 1; i < data.length; i++) {
+    ctx.lineTo(toX(i), toY(data[i]));
+  }
+  ctx.lineTo(toX(data.length - 1), H - pad.bottom);
+  ctx.lineTo(toX(0), H - pad.bottom);
+  ctx.closePath();
+  const grad = ctx.createLinearGradient(0, pad.top, 0, H - pad.bottom);
+  grad.addColorStop(0, 'rgba(74,222,128,0.15)');
+  grad.addColorStop(1, 'rgba(74,222,128,0.01)');
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Line
+  ctx.strokeStyle = '#4ade80';
+  ctx.lineWidth = 1.5;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  for (let i = 0; i < data.length; i++) {
+    const x = toX(i), y = toY(data[i]);
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+
+  // Spike dots
+  for (let i = 0; i < data.length; i++) {
+    if (data[i] > threshold) {
+      ctx.beginPath();
+      ctx.arc(toX(i), toY(data[i]), 3, 0, Math.PI * 2);
+      ctx.fillStyle = '#f87171';
+      ctx.fill();
+    }
+  }
+
+  // X-axis label
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '10px sans-serif';
+  ctx.textAlign = 'center';
+  ctx.fillText(`← últimas ${data.length} muestras →`, pad.left + gW / 2, H - 4);
+}
+
+// Range inputs
+$('burst-size').addEventListener('input', () => {
+  $('burst-out').textContent = $('burst-size').value;
+  if (measuring) worker.postMessage({ type: 'UPDATE_PARAMS', burstSize: parseInt($('burst-size').value) });
+});
+$('interval').addEventListener('input', () => {
+  $('interval-out').textContent = $('interval').value + ' ms';
+  if (measuring) worker.postMessage({ type: 'UPDATE_PARAMS', interval: parseInt($('interval').value) });
+});
+
+log('Demo lista. Pulsa "Crear archivo OPFS" para comenzar.');
+$('opfs-status').textContent = 'En espera';
+</script>
+</body>
+</html>
