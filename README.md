@@ -1,29 +1,26 @@
 # FROST-PoC: OPFS SSD Timing Side-Channel Demo
-> **Disclaimer:** Este proyecto es una Prueba de Concepto (PoC) creada estrictamente con **fines educativos y de investigación**. Demuestra la vulnerabilidad teórica de los ataques de canal lateral a través de sistemas de almacenamiento web. No incluye modelos de Machine Learning para desanonimizar tráfico o aplicaciones reales.
-## 📝 Descripción Breve
-Una demostración en JavaScript puro de cómo la API Origin Private File System (OPFS) puede ser explotada desde un navegador web moderno para medir con alta precisión la latencia de lectura de un disco SSD. Al monitorear las variaciones de esta latencia (contención I/O), se sientan las bases para ataques de canal lateral basados en tiempos, similares a los descritos en la investigación del ataque FROST.
-## 🚀 Cómo funciona
-1. **Archivo Sonda en OPFS:** El script crea un archivo binario grande (ej. 256 MB) en el disco del usuario utilizando la API de OPFS. Esto se hace en silencio, ya que OPFS no requiere solicitar permisos al usuario.
-2. **Web Worker Dedicado:** Para no bloquear el hilo principal del navegador y poder usar el método `createSyncAccessHandle()` (necesario para la precisión síncrona), el ataque corre dentro de un Web Worker (`worker.js`).
-3. **Medición de Latencia:** El Worker realiza ráfagas continuas de lecturas aleatorias de 4 KB midiendo el tiempo exacto que tarda cada una usando `performance.now()`.
-4. **Detección de Contención:** Cuando otra aplicación en el ordenador del usuario (por ejemplo, abrir Photoshop, un juego o copiar archivos) usa el SSD, se produce un "cuello de botella" a nivel de hardware. El script detecta estos picos de latencia de lectura.
-## 🧠 El salto al Ataque Real (No incluido)
-En un ataque completo, esta sonda se usa para recopilar miles de gráficas de latencia. Cada programa genera una "huella dactilar" I/O única. Esos datos se pasarían luego a un modelo de Machine Learning (como una Red Neuronal Convolucional) entrenado previamente para inferir con gran precisión **qué aplicación exacta** está abriendo el usuario, rompiendo así la privacidad del sistema desde el navegador.
-## ⚙️ Requisitos y Uso
+> Disclaimer: Este proyecto es una Prueba de Concepto (PoC) creada estrictamente con fines educativos y de investigación. Demuestra la vulnerabilidad teórica de los ataques de canal lateral a través de sistemas de almacenamiento web. No incluye modelos de Machine Learning para desanonimizar tráfico o aplicaciones reales.
+## Descripcion Breve
+PoC educativo en JS que explota OPFS para medir la latencia SSD desde el navegador. Detecta picos de lectura I/O (contención), base de los ataques de canal lateral como FROST.
+## Fundamento Tecnico
+Este proyecto es una implementacion practica basada en investigaciones recientes de seguridad informatica (conocido como el ataque FROST). El concepto principal radica en que los discos SSD, al recibir peticiones de lectura simultaneas desde diferentes aplicaciones (por ejemplo, al abrir un programa pesado), sufren pequenos retrasos en su tiempo de respuesta (latencia). 
+El estandar web moderno introdujo la API OPFS (Origin Private File System), que permite a las paginas web acceder al disco local del usuario con un rendimiento casi nativo. Esta prueba de concepto abusa de esta API para cronometrar, desde un entorno aislado en el navegador, cuanto tarda el disco en responder a lecturas constantes. Cuando la latencia se dispara temporalmente, el script deduce que el usuario acaba de iniciar otra aplicacion o proceso en su ordenador que esta consumiendo recursos del disco.
+## Referencias y Noticias
+Este PoC ilustra la vulnerabilidad documentada en los siguientes articulos:
+- [Investigadores dicen que pueden espiar tu navegacion... (elHacker.net)](https://blog.elhacker.net/2026/05/investigadores-dicen-que-pueden-espiar.html)
+- [Researchers say they can spy on your browsing... (Tom's Hardware)](https://www.tomshardware.com/tech-industry/cyber-security/researchers-say-they-can-spy-on-your-browsing-by-measuring-ssd-activity-through-a-browser-api)
+## Como funciona (Arquitectura)
+1. Archivo Sonda en OPFS: El script crea un archivo binario grande (ej. 256 MB) en el disco del usuario utilizando OPFS. Esta operacion es silenciosa y no requiere permisos ni interaccion por parte del usuario.
+2. Web Worker Dedicado: El proceso de lectura intensiva se delega a un hilo secundario (worker.js) para poder utilizar `createSyncAccessHandle()`. Esto es obligatorio para hacer lecturas sincronas puras y obtener la maxima precision temporal posible sin que la interfaz grafica interfiera.
+3. Medicion de Latencia: El worker realiza bloques de lecturas aleatorias sobre el archivo, midiendo el tiempo exacto de cada lectura mediante la funcion `performance.now()`.
+4. Deteccion de Contencion: El hilo principal grafica la latencia y aplica una heuristica matematica. Si detecta conjuntos de lecturas inusualmente lentas, advierte de la actividad en disco de terceros. 
+En el ataque malicioso real completo (FROST), estas latencias no se analizan con una regla estatica simple, sino que se envian a una Red Neuronal Convolucional (IA) preentrenada que es capaz de clasificar esos patrones temporales para deducir el nombre exacto de la aplicacion que abrio el usuario.
+## Requisitos y Uso
 - Navegador moderno compatible con OPFS y Web Workers (Chrome 102+, Safari 15.2+, Firefox 111+).
-- **Debe servirse a través de contexto seguro**: `localhost` o `HTTPS` válido. OPFS no funciona en `file://` o HTTP puro (salvo localhost).
-### Despliegue en Local
-Puedes servir este proyecto rápidamente con Python o PHP.
+- Debe servirse a traves de contexto seguro: `localhost` o `HTTPS` valido (por restricciones de seguridad de OPFS).
+Para iniciar la prueba localmente, ejecuta un servidor HTTP basico en el directorio del proyecto:
+Con Python:
 ```bash
-# Con Python
 python3 -m http.server 8000
-# Visita http://localhost:8000
 ```
-```bash
-# Con PHP
-php -S localhost:8000
-# Visita http://localhost:8000
-```
-## 🗂️ Estructura del Código
-- `index.html`: Interfaz de usuario, gráficas en tiempo real (Canvas) y motor de inferencia heurística simulada.
-- `worker.js`: Web Worker encargado de gestionar OPFS, escribir el archivo sonda y realizar el bombardeo de lecturas síncronas.
+Luego visita http://localhost:8000
